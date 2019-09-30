@@ -13,6 +13,7 @@ from pysot.models.loss import select_cross_entropy_loss, weight_l1_loss
 from pysot.models.backbone import get_backbone
 from pysot.models.head import get_rpn_head, get_mask_head, get_refine_head
 from pysot.models.neck import get_neck
+from pysot.models.sa import get_sa
 
 
 class ModelBuilder(nn.Module):
@@ -22,6 +23,10 @@ class ModelBuilder(nn.Module):
         # build backbone
         self.backbone = get_backbone(cfg.BACKBONE.TYPE,
                                      **cfg.BACKBONE.KWARGS)
+
+        if cfg.SA.SA:
+            self.sa = get_sa(cfg.SA.TYPE,
+                             **cfg.SA.KWARGS)
 
         # build adjust layer
         if cfg.ADJUST.ADJUST:
@@ -41,7 +46,10 @@ class ModelBuilder(nn.Module):
                 self.refine_head = get_refine_head(cfg.REFINE.TYPE)
 
     def template(self, z):
-        zf = self.backbone(z)
+        if cfg.SA.SA:
+            zf, zsa = self.backbone(z)
+        else:
+            zf = self.backbone(z)
         if cfg.MASK.MASK:
             zf = zf[-1]
         if cfg.ADJUST.ADJUST:
@@ -49,7 +57,12 @@ class ModelBuilder(nn.Module):
         self.zf = zf
 
     def track(self, x):
-        xf = self.backbone(x)
+        if cfg.SA.SA:
+            xf, xsa = self.backbone(x)
+            a = self.sa(xf)
+        else:
+            xf = self.backbone(x)
+
         if cfg.MASK.MASK:
             self.xf = xf[:-1]
             xf = xf[-1]

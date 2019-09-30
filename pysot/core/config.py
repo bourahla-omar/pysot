@@ -57,7 +57,7 @@ __C.TRAIN.EPOCH = 20
 
 __C.TRAIN.START_EPOCH = 0
 
-__C.TRAIN.BATCH_SIZE = 32
+__C.TRAIN.BATCH_SIZE = 4
 
 __C.TRAIN.NUM_WORKERS = 1
 
@@ -206,6 +206,16 @@ __C.RPN = CN()
 __C.RPN.TYPE = 'MultiRPN'
 
 __C.RPN.KWARGS = CN(new_allowed=True)
+# ------------------------------------------------------------------------ #
+# self attention options
+# ------------------------------------------------------------------------ #
+__C.SA = CN()
+
+__C.SA.SA = False
+
+__C.SA.TYPE = 'SA'
+
+__C.SA.KWARGS = CN(new_allowed=True)
 
 # ------------------------------------------------------------------------ #
 # mask options

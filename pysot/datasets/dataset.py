@@ -230,6 +230,7 @@ class TrkDataset(Dataset):
 
     def __len__(self):
         return self.num
+        # return 30000
 
     def __getitem__(self, index):
         index = self.pick[index]

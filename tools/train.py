@@ -16,6 +16,8 @@ import numpy as np
 
 import torch
 import torch.nn as nn
+from time import sleep
+
 from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 from torch.nn.utils import clip_grad_norm_
@@ -35,7 +37,7 @@ from pysot.core.config import cfg
 
 logger = logging.getLogger('global')
 parser = argparse.ArgumentParser(description='siamrpn tracking')
-parser.add_argument('--cfg', type=str, default='config.yaml',
+parser.add_argument('--cfg', type=str, default='experiments/siamrpn_alex_dwxcorr_16gpu/config.yaml',
                     help='configuration of tracking')
 parser.add_argument('--seed', type=int, default=123456,
                     help='random seed')
@@ -162,8 +164,8 @@ def train(train_loader, model, optimizer, lr_scheduler, tb_writer):
         return not(math.isnan(x) or math.isinf(x) or x > 1e4)
 
     world_size = get_world_size()
-    num_per_epoch = len(train_loader.dataset) // \
-        cfg.TRAIN.EPOCH // (cfg.TRAIN.BATCH_SIZE * world_size)
+    len(train_loader.dataset)
+    num_per_epoch = len(train_loader.dataset) // cfg.TRAIN.EPOCH // (cfg.TRAIN.BATCH_SIZE * world_size)
     start_epoch = cfg.TRAIN.START_EPOCH
     epoch = start_epoch
 
@@ -208,49 +210,50 @@ def train(train_loader, model, optimizer, lr_scheduler, tb_writer):
         if rank == 0:
             tb_writer.add_scalar('time/data', data_time, tb_idx)
 
-        outputs = model(data)
-        loss = outputs['total_loss']
+        # outputs = model(data)
+        # loss = outputs['total_loss']
+        #
+        # if is_valid_number(loss.data.item()):
+        #     optimizer.zero_grad()
+        #     loss.backward()
+        #     reduce_gradients(model)
+        #
+        #     if rank == 0 and cfg.TRAIN.LOG_GRADS:
+        #         log_grads(model.module, tb_writer, tb_idx)
+        #
+        #     # clip gradient
+        #     clip_grad_norm_(model.parameters(), cfg.TRAIN.GRAD_CLIP)
+        #     optimizer.step()
 
-        if is_valid_number(loss.data.item()):
-            optimizer.zero_grad()
-            loss.backward()
-            reduce_gradients(model)
+        # batch_time = time.time() - end
+        # batch_info = {}
+        # batch_info['batch_time'] = average_reduce(batch_time)
+        # batch_info['data_time'] = average_reduce(data_time)
+        # for k, v in sorted(outputs.items()):
+        #     batch_info[k] = average_reduce(v.data.item())
 
-            if rank == 0 and cfg.TRAIN.LOG_GRADS:
-                log_grads(model.module, tb_writer, tb_idx)
-
-            # clip gradient
-            clip_grad_norm_(model.parameters(), cfg.TRAIN.GRAD_CLIP)
-            optimizer.step()
-
-        batch_time = time.time() - end
-        batch_info = {}
-        batch_info['batch_time'] = average_reduce(batch_time)
-        batch_info['data_time'] = average_reduce(data_time)
-        for k, v in sorted(outputs.items()):
-            batch_info[k] = average_reduce(v.data.item())
-
-        average_meter.update(**batch_info)
-
-        if rank == 0:
-            for k, v in batch_info.items():
-                tb_writer.add_scalar(k, v, tb_idx)
-
-            if (idx+1) % cfg.TRAIN.PRINT_FREQ == 0:
-                info = "Epoch: [{}][{}/{}] lr: {:.6f}\n".format(
-                            epoch+1, (idx+1) % num_per_epoch,
-                            num_per_epoch, cur_lr)
-                for cc, (k, v) in enumerate(batch_info.items()):
-                    if cc % 2 == 0:
-                        info += ("\t{:s}\t").format(
-                                getattr(average_meter, k))
-                    else:
-                        info += ("{:s}\n").format(
-                                getattr(average_meter, k))
-                logger.info(info)
-                print_speed(idx+1+start_epoch*num_per_epoch,
-                            average_meter.batch_time.avg,
-                            cfg.TRAIN.EPOCH * num_per_epoch)
+        # average_meter.update(**batch_info)
+        #
+        # if rank == 0:
+        #     for k, v in batch_info.items():
+        #         tb_writer.add_scalar(k, v, tb_idx)
+        #
+        #     if (idx+1) % cfg.TRAIN.PRINT_FREQ == 0:
+        #         info = "Epoch: [{}][{}/{}] lr: {:.6f}\n".format(
+        #                     epoch+1, (idx+1) % num_per_epoch,
+        #                     num_per_epoch, cur_lr)
+        #         for cc, (k, v) in enumerate(batch_info.items()):
+        #             if cc % 2 == 0:
+        #                 info += ("\t{:s}\t").format(
+        #                         getattr(average_meter, k))
+        #             else:
+        #                 info += ("{:s}\n").format(
+        #                         getattr(average_meter, k))
+        #         logger.info(info)
+        #         print_speed(idx+1+start_epoch*num_per_epoch,
+        #                     average_meter.batch_time.avg,
+        #                     cfg.TRAIN.EPOCH * num_per_epoch)
+        sleep(5)
         end = time.time()
 
 

@@ -8,6 +8,9 @@ BACKBONE:
 ADJUST:
     ADJUST: False
 
+SA:
+    SA: False
+
 RPN:
     TYPE: 'DepthwiseRPN'
     KWARGS:
