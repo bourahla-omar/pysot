@@ -16,7 +16,6 @@ import numpy as np
 
 import torch
 import torch.nn as nn
-from time import sleep
 
 from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
@@ -25,15 +24,14 @@ from torch.utils.data.distributed import DistributedSampler
 
 from pysot.utils.lr_scheduler import build_lr_scheduler
 from pysot.utils.log_helper import init_log, print_speed, add_file_handler
-from pysot.utils.distributed import dist_init, DistModule, reduce_gradients,\
-        average_reduce, get_rank, get_world_size
+from pysot.utils.distributed import dist_init, DistModule, reduce_gradients, \
+    average_reduce, get_rank, get_world_size
 from pysot.utils.model_load import load_pretrain, restore_from
 from pysot.utils.average_meter import AverageMeter
 from pysot.utils.misc import describe, commit
 from pysot.models.model_builder import ModelBuilder
 from pysot.datasets.dataset import TrkDataset
 from pysot.core.config import cfg
-
 
 logger = logging.getLogger('global')
 parser = argparse.ArgumentParser(description='siamrpn tracking')
@@ -74,24 +72,61 @@ def build_data_loader():
 
 
 def build_opt_lr(model, current_epoch=0):
-    if current_epoch >= cfg.BACKBONE.TRAIN_EPOCH:
-        for layer in cfg.BACKBONE.TRAIN_LAYERS:
-            for param in getattr(model.backbone, layer).parameters():
-                param.requires_grad = True
-            for m in getattr(model.backbone, layer).modules():
+
+    if cfg.SA.SA:
+        if current_epoch >= cfg.BACKBONE1.TRAIN_EPOCH:
+            for layer in cfg.BACKBONE1.TRAIN_LAYERS:
+                for param in getattr(model.backbone1, layer).parameters():
+                    param.requires_grad = True
+                for m in getattr(model.backbone1, layer).modules():
+                    if isinstance(m, nn.BatchNorm2d):
+                        m.train()
+        else:
+            for param in model.backbone1.parameters():
+                param.requires_grad = False
+            for m in model.backbone1.modules():
                 if isinstance(m, nn.BatchNorm2d):
-                    m.train()
+                    m.eval()
+        if current_epoch >= cfg.BACKBONE2.TRAIN_EPOCH:
+            for layer in cfg.BACKBONE2.TRAIN_LAYERS:
+                for param in getattr(model.backbone2, layer).parameters():
+                    param.requires_grad = True
+                for m in getattr(model.backbone2, layer).modules():
+                    if isinstance(m, nn.BatchNorm2d):
+                        m.train()
+        else:
+            for param in model.backbone2.parameters():
+                param.requires_grad = False
+            for m in model.backbone2.modules():
+                if isinstance(m, nn.BatchNorm2d):
+                    m.eval()
     else:
-        for param in model.backbone.parameters():
-            param.requires_grad = False
-        for m in model.backbone.modules():
-            if isinstance(m, nn.BatchNorm2d):
-                m.eval()
+        if current_epoch >= cfg.BACKBONE.TRAIN_EPOCH:
+            for layer in cfg.BACKBONE.TRAIN_LAYERS:
+                for param in getattr(model.backbone, layer).parameters():
+                    param.requires_grad = True
+                for m in getattr(model.backbone, layer).modules():
+                    if isinstance(m, nn.BatchNorm2d):
+                        m.train()
+        else:
+            for param in model.backbone.parameters():
+                param.requires_grad = False
+            for m in model.backbone.modules():
+                if isinstance(m, nn.BatchNorm2d):
+                    m.eval()
 
     trainable_params = []
-    trainable_params += [{'params': filter(lambda x: x.requires_grad,
-                                           model.backbone.parameters()),
-                          'lr': cfg.BACKBONE.LAYERS_LR * cfg.TRAIN.BASE_LR}]
+    if cfg.SA.SA:
+        trainable_params += [{'params': filter(lambda x: x.requires_grad,
+                                               model.backbone1.parameters()),
+                              'lr': cfg.BACKBONE1.LAYERS_LR * cfg.TRAIN.BASE_LR}]
+        trainable_params += [{'params': filter(lambda x: x.requires_grad,
+                                               model.backbone2.parameters()),
+                              'lr': cfg.BACKBONE2.LAYERS_LR * cfg.TRAIN.BASE_LR}]
+    else:
+        trainable_params += [{'params': filter(lambda x: x.requires_grad,
+                                               model.backbone.parameters()),
+                              'lr': cfg.BACKBONE.LAYERS_LR * cfg.TRAIN.BASE_LR}]
 
     if cfg.ADJUST.ADJUST:
         trainable_params += [{'params': model.neck.parameters(),
@@ -107,6 +142,10 @@ def build_opt_lr(model, current_epoch=0):
     if cfg.REFINE.REFINE:
         trainable_params += [{'params': model.refine_head.parameters(),
                               'lr': cfg.TRAIN.LR.BASE_LR}]
+
+    if cfg.SA.SA:
+        trainable_params += [{'params': model.sa.stack2[1].parameters(),
+                              'lr': cfg.TRAIN.BASE_LR}]
 
     optimizer = torch.optim.SGD(trainable_params,
                                 momentum=cfg.TRAIN.MOMENTUM,
@@ -138,12 +177,12 @@ def log_grads(model, tb_writer, tb_index):
         else:
             rpn_norm += _norm ** 2
 
-        tb_writer.add_scalar('grad_all/'+k.replace('.', '/'),
+        tb_writer.add_scalar('grad_all/' + k.replace('.', '/'),
                              _norm, tb_index)
-        tb_writer.add_scalar('weight_all/'+k.replace('.', '/'),
+        tb_writer.add_scalar('weight_all/' + k.replace('.', '/'),
                              w_norm, tb_index)
-        tb_writer.add_scalar('w-g/'+k.replace('.', '/'),
-                             w_norm/(1e-20 + _norm), tb_index)
+        tb_writer.add_scalar('w-g/' + k.replace('.', '/'),
+                             w_norm / (1e-20 + _norm), tb_index)
     tot_norm = feature_norm + rpn_norm
     tot_norm = tot_norm ** 0.5
     feature_norm = feature_norm ** 0.5
@@ -161,10 +200,9 @@ def train(train_loader, model, optimizer, lr_scheduler, tb_writer):
     average_meter = AverageMeter()
 
     def is_valid_number(x):
-        return not(math.isnan(x) or math.isinf(x) or x > 1e4)
+        return not (math.isnan(x) or math.isinf(x) or x > 1e4)
 
     world_size = get_world_size()
-    len(train_loader.dataset)
     num_per_epoch = len(train_loader.dataset) // cfg.TRAIN.EPOCH // (cfg.TRAIN.BATCH_SIZE * world_size)
     start_epoch = cfg.TRAIN.START_EPOCH
     epoch = start_epoch
@@ -181,79 +219,88 @@ def train(train_loader, model, optimizer, lr_scheduler, tb_writer):
 
             if get_rank() == 0:
                 torch.save(
-                        {'epoch': epoch,
-                         'state_dict': model.module.state_dict(),
-                         'optimizer': optimizer.state_dict()},
-                        cfg.TRAIN.SNAPSHOT_DIR+'/checkpoint_e%d.pth' % (epoch))
+                    {'epoch': epoch,
+                     'state_dict': model.module.state_dict(),
+                     'optimizer': optimizer.state_dict()},
+                    cfg.TRAIN.SNAPSHOT_DIR + '/checkpoint_e%d.pth' % (epoch))
 
             if epoch == cfg.TRAIN.EPOCH:
                 return
 
-            if cfg.BACKBONE.TRAIN_EPOCH == epoch:
-                logger.info('start training backbone.')
-                optimizer, lr_scheduler = build_opt_lr(model.module, epoch)
-                logger.info("model\n{}".format(describe(model.module)))
+            if cfg.SA.SA:
+                if cfg.BACKBONE1.TRAIN_EPOCH == epoch:
+                    logger.info('start training backbone1.')
+                    optimizer, lr_scheduler = build_opt_lr(model.module, epoch)
+                    logger.info("model\n{}".format(describe(model.module)))
+                if cfg.BACKBONE2.TRAIN_EPOCH == epoch:
+                    logger.info('start training backbone2.')
+                    optimizer, lr_scheduler = build_opt_lr(model.module, epoch)
+                    logger.info("model\n{}".format(describe(model.module)))
+            else:
+                if cfg.BACKBONE.TRAIN_EPOCH == epoch:
+                    logger.info('start training backbone.')
+                    optimizer, lr_scheduler = build_opt_lr(model.module, epoch)
+                    logger.info("model\n{}".format(describe(model.module)))
 
             lr_scheduler.step(epoch)
             cur_lr = lr_scheduler.get_cur_lr()
-            logger.info('epoch: {}'.format(epoch+1))
+            logger.info('epoch: {}'.format(epoch + 1))
 
         tb_idx = idx
         if idx % num_per_epoch == 0 and idx != 0:
             for idx, pg in enumerate(optimizer.param_groups):
-                logger.info('epoch {} lr {}'.format(epoch+1, pg['lr']))
+                logger.info('epoch {} lr {}'.format(epoch + 1, pg['lr']))
                 if rank == 0:
-                    tb_writer.add_scalar('lr/group{}'.format(idx+1),
+                    tb_writer.add_scalar('lr/group{}'.format(idx + 1),
                                          pg['lr'], tb_idx)
 
         data_time = average_reduce(time.time() - end)
         if rank == 0:
             tb_writer.add_scalar('time/data', data_time, tb_idx)
 
-        # outputs = model(data)
-        # loss = outputs['total_loss']
-        #
-        # if is_valid_number(loss.data.item()):
-        #     optimizer.zero_grad()
-        #     loss.backward()
-        #     reduce_gradients(model)
-        #
-        #     if rank == 0 and cfg.TRAIN.LOG_GRADS:
-        #         log_grads(model.module, tb_writer, tb_idx)
-        #
-        #     # clip gradient
-        #     clip_grad_norm_(model.parameters(), cfg.TRAIN.GRAD_CLIP)
-        #     optimizer.step()
+        outputs = model(data)
+        loss = outputs['total_loss']
 
-        # batch_time = time.time() - end
-        # batch_info = {}
-        # batch_info['batch_time'] = average_reduce(batch_time)
-        # batch_info['data_time'] = average_reduce(data_time)
-        # for k, v in sorted(outputs.items()):
-        #     batch_info[k] = average_reduce(v.data.item())
+        if is_valid_number(loss.data.item()):
+            optimizer.zero_grad()
+            loss.backward()
+            reduce_gradients(model)
 
-        # average_meter.update(**batch_info)
-        #
-        # if rank == 0:
-        #     for k, v in batch_info.items():
-        #         tb_writer.add_scalar(k, v, tb_idx)
-        #
-        #     if (idx+1) % cfg.TRAIN.PRINT_FREQ == 0:
-        #         info = "Epoch: [{}][{}/{}] lr: {:.6f}\n".format(
-        #                     epoch+1, (idx+1) % num_per_epoch,
-        #                     num_per_epoch, cur_lr)
-        #         for cc, (k, v) in enumerate(batch_info.items()):
-        #             if cc % 2 == 0:
-        #                 info += ("\t{:s}\t").format(
-        #                         getattr(average_meter, k))
-        #             else:
-        #                 info += ("{:s}\n").format(
-        #                         getattr(average_meter, k))
-        #         logger.info(info)
-        #         print_speed(idx+1+start_epoch*num_per_epoch,
-        #                     average_meter.batch_time.avg,
-        #                     cfg.TRAIN.EPOCH * num_per_epoch)
-        sleep(5)
+            if rank == 0 and cfg.TRAIN.LOG_GRADS:
+                log_grads(model.module, tb_writer, tb_idx)
+
+            # clip gradient
+            clip_grad_norm_(model.parameters(), cfg.TRAIN.GRAD_CLIP)
+            optimizer.step()
+
+        batch_time = time.time() - end
+        batch_info = {}
+        batch_info['batch_time'] = average_reduce(batch_time)
+        batch_info['data_time'] = average_reduce(data_time)
+        for k, v in sorted(outputs.items()):
+            batch_info[k] = average_reduce(v.data.item())
+
+        average_meter.update(**batch_info)
+
+        if rank == 0:
+            for k, v in batch_info.items():
+                tb_writer.add_scalar(k, v, tb_idx)
+
+            if (idx+1) % cfg.TRAIN.PRINT_FREQ == 0:
+                info = "Epoch: [{}][{}/{}] lr: {:.6f}\n".format(
+                            epoch+1, (idx+1) % num_per_epoch,
+                            num_per_epoch, cur_lr)
+                for cc, (k, v) in enumerate(batch_info.items()):
+                    if cc % 2 == 0:
+                        info += ("\t{:s}\t").format(
+                                getattr(average_meter, k))
+                    else:
+                        info += ("{:s}\n").format(
+                                getattr(average_meter, k))
+                logger.info(info)
+                print_speed(idx+1+start_epoch*num_per_epoch,
+                            average_meter.batch_time.avg,
+                            cfg.TRAIN.EPOCH * num_per_epoch)
         end = time.time()
 
 
@@ -278,12 +325,78 @@ def main():
     # create model
     model = ModelBuilder().cuda().train()
     dist_model = DistModule(model)
+    if cfg.PRETRAINED.PT:
+        cur_path = os.path.dirname(os.path.realpath(__file__))
+        model_path = os.path.join(cur_path, '../', cfg.PRETRAINED.MODEL)
+        loadmodel = torch.load(model_path,
+                                         map_location=lambda storage, loc: storage.cpu())
+        model.load_state_dict(loadmodel, strict=False)
+        # model.backbone1.layer1[0] = model.backbone.features[0]
+        # model.backbone1.layer1[1] = model.backbone.features[1]
+        # model.backbone1.layer1[2] = model.backbone.features[2]
+        # model.backbone1.layer1[3] = model.backbone.features[3]
+        # model.backbone1.layer2[0] = model.backbone.features[4]
+        # model.backbone1.layer2[1] = model.backbone.features[5]
+        # model.backbone1.layer2[2] = model.backbone.features[6]
+        # model.backbone1.layer2[3] = model.backbone.features[7]
+        # model.backbone1.layer3[0] = model.backbone.features[8]
+        # model.backbone1.layer3[1] = model.backbone.features[9]
+        # model.backbone1.layer3[2] = model.backbone.features[10]
+        # model.backbone2.layer4[0] = model.backbone.features[11]
+        # model.backbone2.layer4[0].weight.data = torch.cat((model.backbone2.layer4[0].weight.data,
+        #                                                    torch.zeros(
+        #                                                        [model.backbone2.layer4[0].weight.data.size()[0],
+        #                                                         100,
+        #                                                         model.backbone2.layer4[0].weight.data.size()[2],
+        #                                                         model.backbone2.layer4[0].weight.data.size()[3]
+        #                                                         ]).cuda()), 1)
+        # model.backbone2.layer4[1] = model.backbone.features[12]
+        # model.backbone2.layer4[2] = model.backbone.features[13]
+        # model.backbone2.layer5[0] = model.backbone.features[14]
+        # model.backbone2.layer5[1] = model.backbone.features[15]
 
     # load pretrained backbone weights
-    if cfg.BACKBONE.PRETRAINED:
+    if cfg.BACKBONE.PRETRAINED and not cfg.PRETRAINED.PT:
         cur_path = os.path.dirname(os.path.realpath(__file__))
         backbone_path = os.path.join(cur_path, '../', cfg.BACKBONE.PRETRAINED)
         load_pretrain(model.backbone, backbone_path)
+
+    if cfg.SA.SA:
+        model.backbone1.layer1[0] = model.backbone.features[0]
+        model.backbone1.layer1[1] = model.backbone.features[1]
+        model.backbone1.layer1[2] = model.backbone.features[2]
+        model.backbone1.layer1[3] = model.backbone.features[3]
+        model.backbone1.layer2[0] = model.backbone.features[4]
+        model.backbone1.layer2[1] = model.backbone.features[5]
+        model.backbone1.layer2[2] = model.backbone.features[6]
+        model.backbone1.layer2[3] = model.backbone.features[7]
+        model.backbone1.layer3[0] = model.backbone.features[8]
+        model.backbone1.layer3[1] = model.backbone.features[9]
+        model.backbone1.layer3[2] = model.backbone.features[10]
+        model.backbone2.layer4[0] = model.backbone.features[11]
+        model.backbone2.layer4[0].weight.data = torch.cat((model.backbone2.layer4[0].weight.data,
+                                                           torch.zeros(
+                                                               [model.backbone2.layer4[0].weight.data.size()[0],
+                                                                100,
+                                                                model.backbone2.layer4[0].weight.data.size()[2],
+                                                                model.backbone2.layer4[0].weight.data.size()[3]
+                                                                ]).cuda()), 1)
+        model.backbone2.layer4[1] = model.backbone.features[12]
+        model.backbone2.layer4[2] = model.backbone.features[13]
+        model.backbone2.layer5[0] = model.backbone.features[14]
+        model.backbone2.layer5[1] = model.backbone.features[15]
+        #model.backbone1.layer1 = model.backbone.layer1
+        #model.backbone1.layer2 = model.backbone.layer2
+        #model.backbone1.layer3 = model.backbone.layer3
+        #model.backbone2.layer4 = model.backbone.layer4
+        #model.backbone2.layer4[0].weight.data = torch.cat((model.backbone2.layer4[0].weight.data,
+        #                                                   torch.zeros(
+        #                                                       [model.backbone2.layer4[0].weight.data.size()[0],
+        #                                                        100,
+        #                                                        model.backbone2.layer4[0].weight.data.size()[2],
+        #                                                        model.backbone2.layer4[0].weight.data.size()[3]
+        #                                                        ]).cuda()), 1)
+        #model.backbone2.layer5 = model.backbone.layer5
 
     # create tensorboard writer
     if rank == 0 and cfg.TRAIN.LOG_DIR:

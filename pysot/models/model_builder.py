@@ -21,12 +21,20 @@ class ModelBuilder(nn.Module):
         super(ModelBuilder, self).__init__()
 
         # build backbone
-        self.backbone = get_backbone(cfg.BACKBONE.TYPE,
-                                     **cfg.BACKBONE.KWARGS)
 
         if cfg.SA.SA:
+            self.backbone1 = get_backbone(cfg.BACKBONE1.TYPE,
+                                          **cfg.BACKBONE1.KWARGS)
             self.sa = get_sa(cfg.SA.TYPE,
                              **cfg.SA.KWARGS)
+            self.backbone2 = get_backbone(cfg.BACKBONE2.TYPE,
+                                          **cfg.BACKBONE2.KWARGS)
+            if not cfg.SA.TESTING:
+                self.backbone = get_backbone(cfg.BACKBONE.TYPE,
+                                             **cfg.BACKBONE.KWARGS)
+        else:
+            self.backbone = get_backbone(cfg.BACKBONE.TYPE,
+                                         **cfg.BACKBONE.KWARGS)
 
         # build adjust layer
         if cfg.ADJUST.ADJUST:
@@ -47,7 +55,10 @@ class ModelBuilder(nn.Module):
 
     def template(self, z):
         if cfg.SA.SA:
-            zf, zsa = self.backbone(z)
+            zfb1 = self.backbone1(z)
+            zfsa = self.sa(zfb1, zfb1)
+            zf = self.backbone2(zfsa)
+            self.zfb1 = zfb1
         else:
             zf = self.backbone(z)
         if cfg.MASK.MASK:
@@ -58,8 +69,9 @@ class ModelBuilder(nn.Module):
 
     def track(self, x):
         if cfg.SA.SA:
-            xf, xsa = self.backbone(x)
-            a = self.sa(xf)
+            xfb1 = self.backbone1(x)
+            xfsa = self.sa(xfb1, self.zfb1)
+            xf = self.backbone2(xfsa)
         else:
             xf = self.backbone(x)
 
@@ -72,17 +84,17 @@ class ModelBuilder(nn.Module):
         if cfg.MASK.MASK:
             mask, self.mask_corr_feature = self.mask_head(self.zf, xf)
         return {
-                'cls': cls,
-                'loc': loc,
-                'mask': mask if cfg.MASK.MASK else None
-               }
+            'cls': cls,
+            'loc': loc,
+            'mask': mask if cfg.MASK.MASK else None
+        }
 
     def mask_refine(self, pos):
         return self.refine_head(self.xf, self.mask_corr_feature, pos)
 
     def log_softmax(self, cls):
         b, a2, h, w = cls.size()
-        cls = cls.view(b, 2, a2//2, h, w)
+        cls = cls.view(b, 2, a2 // 2, h, w)
         cls = cls.permute(0, 2, 3, 4, 1).contiguous()
         cls = F.log_softmax(cls, dim=4)
         return cls
@@ -97,8 +109,16 @@ class ModelBuilder(nn.Module):
         label_loc_weight = data['label_loc_weight'].cuda()
 
         # get feature
-        zf = self.backbone(template)
-        xf = self.backbone(search)
+        if cfg.SA.SA:
+            zfb1 = self.backbone1(template)
+            zfsa = self.sa(zfb1, zfb1)
+            zf = self.backbone2(zfsa)
+            xfb1 = self.backbone1(search)
+            xfsa = self.sa(xfb1, zfb1)
+            xf = self.backbone2(xfsa)
+        else:
+            zf = self.backbone(template)
+            xf = self.backbone(search)
         if cfg.MASK.MASK:
             zf = zf[-1]
             self.xf_refine = xf[:-1]
@@ -115,7 +135,7 @@ class ModelBuilder(nn.Module):
 
         outputs = {}
         outputs['total_loss'] = cfg.TRAIN.CLS_WEIGHT * cls_loss + \
-            cfg.TRAIN.LOC_WEIGHT * loc_loss
+                                cfg.TRAIN.LOC_WEIGHT * loc_loss
         outputs['cls_loss'] = cls_loss
         outputs['loc_loss'] = loc_loss
 
@@ -125,4 +145,5 @@ class ModelBuilder(nn.Module):
             mask_loss = None
             outputs['total_loss'] += cfg.TRAIN.MASK_WEIGHT * mask_loss
             outputs['mask_loss'] = mask_loss
+
         return outputs

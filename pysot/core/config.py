@@ -59,7 +59,7 @@ __C.TRAIN.START_EPOCH = 0
 
 __C.TRAIN.BATCH_SIZE = 4
 
-__C.TRAIN.NUM_WORKERS = 1
+__C.TRAIN.NUM_WORKERS = 2
 
 __C.TRAIN.MOMENTUM = 0.9
 
@@ -185,6 +185,58 @@ __C.BACKBONE.LAYERS_LR = 0.1
 __C.BACKBONE.TRAIN_EPOCH = 10
 
 # ------------------------------------------------------------------------ #
+# Backbone1 for SA options
+# ------------------------------------------------------------------------ #
+__C.BACKBONE1 = CN()
+
+# Backbone type, current only support resnet18,34,50;alexnet;mobilenet
+__C.BACKBONE1.TYPE = 'alexnetp1'
+
+__C.BACKBONE1.KWARGS = CN(new_allowed=True)
+
+# Pretrained backbone weights
+__C.BACKBONE1.PRETRAINED = ''
+
+# Train layers
+__C.BACKBONE1.TRAIN_LAYERS = []
+
+# Layer LR
+__C.BACKBONE1.LAYERS_LR = 0.1
+
+# Switch to train layer
+__C.BACKBONE1.TRAIN_EPOCH = 10
+
+
+__C.BACKBONE2 = CN()
+
+# Backbone type, current only support resnet18,34,50;alexnet;mobilenet
+__C.BACKBONE2.TYPE = 'alexnetp2'
+
+__C.BACKBONE2.KWARGS = CN(new_allowed=True)
+
+# Pretrained backbone weights
+__C.BACKBONE2.PRETRAINED = ''
+
+# Train layers
+__C.BACKBONE2.TRAIN_LAYERS = []
+
+# Layer LR
+__C.BACKBONE2.LAYERS_LR = 0.1
+
+# Switch to train layer
+__C.BACKBONE2.TRAIN_EPOCH = 10
+
+# ------------------------------------------------------------------------ #
+# Pre Training Options
+# ------------------------------------------------------------------------ #
+
+__C.PRETRAINED = CN()
+
+__C.PRETRAINED.PT = False
+
+__C.PRETRAINED.MODEL = ''
+
+# ------------------------------------------------------------------------ #
 # Adjust layer options
 # ------------------------------------------------------------------------ #
 __C.ADJUST = CN()
@@ -214,6 +266,8 @@ __C.SA = CN()
 __C.SA.SA = False
 
 __C.SA.TYPE = 'SA'
+
+__C.SA.TESTING = False
 
 __C.SA.KWARGS = CN(new_allowed=True)
 

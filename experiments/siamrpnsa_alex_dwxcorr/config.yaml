@@ -1,9 +1,15 @@
 META_ARC: "siamrpn_alex_dwxcorr"
 
-BACKBONE:
-    TYPE: "alexnetlegacy2out"
+BACKBONE1:
+    TYPE: "alexnetp1"
     KWARGS:
-        width_mult: 1.0   
+        width_mult: 1.0
+
+
+BACKBONE2:
+    TYPE: "alexnetp2"
+    KWARGS:
+        width_mult: 1.0
 
 ADJUST:
     ADJUST: False
@@ -11,6 +17,7 @@ ADJUST:
 SA:
     SA: True
     TYPE: 'sablock'
+    TESTING: True
 
 RPN:
     TYPE: 'DepthwiseRPN'

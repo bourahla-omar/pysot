@@ -5,6 +5,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+from pysot.models.backbone.alexnetparts import alexnetp1, alexnetp2
 from pysot.models.backbone.alexnetsa import alexnetlegacysa
 from pysot.models.backbone.alexnet import alexnetlegacy, alexnet
 from pysot.models.backbone.mobile_v2 import mobilenetv2
@@ -18,6 +19,8 @@ BACKBONES = {
               'resnet50': resnet50,
               'alexnet': alexnet,
               'alexnetlegacysa': alexnetlegacysa,
+              'alexnetp1': alexnetp1,
+              'alexnetp2': alexnetp2,
             }
 
 
