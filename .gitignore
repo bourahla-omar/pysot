@@ -105,3 +105,17 @@ venv.bak/
 
 testing_dataset/*
 
+/experiments/siamrpnsa_alex_dwxcorr_16gpu/logs/
+/experiments/siamrpnsa_alex_dwxcorr_16gpu/logsprev/
+/experiments/siamrpnsa_alex_dwxcorr_16gpu/results/
+/experiments/siamrpnsa_alex_dwxcorr_16gpu/snapshot/
+/experiments/siamrpnsa_alex_dwxcorr_16gpu/snapshotprev/
+/experiments/siamrpnsa_alex_dwxcorr_16gpu_pt/logs/
+/experiments/siamrpnsa_alex_dwxcorr_16gpu_pt/logz/
+/experiments/siamrpnsa_alex_dwxcorr_16gpu_pt/results/
+/experiments/siamrpnsa_alex_dwxcorr_16gpu_pt/resultz/
+/experiments/siamrpnsa_alex_dwxcorr_16gpu_pt/snapshot/
+/experiments/siamrpnsa_alex_dwxcorr_16gpu_pt/snapshots/
+/experiments/siamrpnsa_alex_dwxcorr_16gpu_vid/logs/
+/experiments/siamrpnsa_alex_dwxcorr_16gpu_vid/results/
+/experiments/siamrpnsa_alex_dwxcorr_16gpu_vid/snapshot/
